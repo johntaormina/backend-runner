@@ -1,1 +1,8 @@
-
+{
+  "access_token": "31d350207d66a9c714e924cd008b1b8b52494dd8",
+  "refresh_token": "d681db36ce731b146dc46ae3e4ad5395e900078b",
+  "expires_at": 1748594358,
+  "expires_in": 21600,
+  "token_type": "Bearer",
+  "athlete": null
+}

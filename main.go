@@ -86,9 +86,9 @@ func NewStravaClient() (*StravaClient, error) {
 	// Load config from environment variables (in production)
 	// For this example, we'll hardcode them
 	config := StravaConfig{
-		ClientID:     
-		ClientSecret: 
-		RedirectURI:  "http://localhost:8080/callback",
+		ClientID:     os.Getenv("STRAVA_CLIENT_ID"),
+		ClientSecret: os.Getenv("STRAVA_CLIENT_SECRET"),
+		RedirectURI:  os.Getenv("STRAVA_REDIRECT_URI"),
 	}
 
 	client := &StravaClient{
@@ -107,7 +107,9 @@ func NewStravaClient() (*StravaClient, error) {
 				return nil, fmt.Errorf("failed to refresh token: %v", err)
 			}
 			client.Token = newToken
-			saveToken(newToken)
+			if err := saveToken(newToken); err != nil {
+				return nil, fmt.Errorf("failed to save token: %v", err)
+			}
 		}
 		return client, nil
 	}
@@ -155,7 +157,10 @@ func startAuthServer(config StravaConfig, authCompleted chan<- *TokenResponse) *
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			error := r.URL.Query().Get("error")
-			fmt.Fprintf(w, "Error: %s", error)
+			if _, err := fmt.Fprintf(w, "Error during authentication: %s", error); err != nil {
+				http.Error(w, "Failed to write response", http.StatusInternalServerError)
+				return
+			}
 			authCompleted <- nil
 			return
 		}
@@ -163,16 +168,24 @@ func startAuthServer(config StravaConfig, authCompleted chan<- *TokenResponse) *
 		// Exchange the code for an access token
 		token, err := exchangeCodeForToken(code, config)
 		if err != nil {
-			fmt.Fprintf(w, "Error exchanging code for token: %v", err)
+			if _, err := fmt.Fprintf(w, "Error exchanging code for token: %v", err); err != nil {
+				http.Error(w, "Failed to write response", http.StatusInternalServerError)
+				return
+			}
 			authCompleted <- nil
 			return
 		}
 
 		// Display success message
-		fmt.Fprintf(w, "Authentication successful! You can close this window.")
+		if _, err := fmt.Fprintf(w, "Authentication successful! You can close this window."); err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
+			return
+		}
 
 		// Save token to file
-		saveToken(token)
+		if err := saveToken(token); err != nil {
+			return
+		}
 
 		// Send token through channel
 		authCompleted <- token
@@ -205,7 +218,11 @@ func exchangeCodeForToken(code string, config StravaConfig) (*TokenResponse, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to send token request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("Error closing response body: %v", cerr)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -241,7 +258,12 @@ func (c *StravaClient) refreshToken(refreshToken string) (*TokenResponse, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send refresh token request: %v", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("Error closing response body: %v", cerr)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -266,7 +288,11 @@ func saveToken(token *TokenResponse) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			log.Printf("Error closing file: %v", cerr)
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
@@ -279,7 +305,11 @@ func loadToken() (*TokenResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			log.Printf("Error closing file: %v", cerr)
+		}
+	}()
 
 	var token TokenResponse
 	if err := json.NewDecoder(file).Decode(&token); err != nil {
@@ -316,7 +346,11 @@ func (c *StravaClient) GetActivities(limit int) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.Printf("Error closing response body: %v", cerr)
+		}
+	}()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
