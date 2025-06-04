@@ -1,2 +1,2 @@
 set-env:
-	@bash ./scripts/set_env.sh env.yaml
+	@bash source ./scripts/set_env.sh env.yaml
